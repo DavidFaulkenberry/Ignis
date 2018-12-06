@@ -1,6 +1,6 @@
 #include <Wire.h>
-#include <Adafruit_MCP23017.h>
 #include <Adafruit_RGBLCDShield.h>
+#include <utility/Adafruit_MCP23017.h>
 
 // The shield uses the I2C SCL and SDA pins. On classic Arduinos
 // this is Analog 4 and 5 so you can't use those for analogRead() anymore
@@ -8,15 +8,16 @@
 // the I2C bus.
 Adafruit_RGBLCDShield lcd = Adafruit_RGBLCDShield();
 
-int temp_reading = 0;     // analogRead() value 0-1023
-float temp_C = 0.0;       // linearized temperature in C
-float hyst = 5;         // hysteresis.
-float setPoint = 60;    // desired temperature
-float safeRange = 2.0;    // Don't want to go beyond 2 degrees from setpoint
-float maxSetPoint = 100; // maximum safe set point
-float minSetPoint = 10; // minimum safe set point
-float maxHyst = 50;      // maximum hysteresis range.
-float minHyst = 5;        // maximum hysteresis range.
+float vout = 0.0;     // analogRead() value 0-1023
+int temp_C = 0;       // linearized temperature in C
+int lastTemp = 0;
+int hyst = 2;         // hysteresis.
+int setPoint = 40;    // desired temperature
+int safeRange = 10;    // Don't want to go beyond 10 degrees from setpoint
+int maxSetPoint = 90; // maximum safe set point
+int minSetPoint = 10; // minimum safe set point
+int maxHyst = 9;      // maximum hysteresis range.
+int minHyst = 1;        // maximum hysteresis range.
 
 // These #defines make it easy to set the backlight color
 #define RED 0x1
@@ -29,101 +30,111 @@ float minHyst = 5;        // maximum hysteresis range.
 
 
 int tempPin = A0;
-int buzzerPin = 5;
-int heaterPin
-//TODO: Add more stuff here
+int redLedPin = 7;
+int greenLedPin = 4;
+int heaterPin = 2;
 
 void setup() {
   Serial.begin(9600);
   lcd.begin(16, 2);
   lcd.print("     IGNIS     ");
-  delay(3000);
-  
-}
+  delay(2000);
+  pinMode(heaterPin, OUTPUT);
+  pinMode(greenLedPin, OUTPUT);
+  pinMode(redLedPin, OUTPUT);
 
-void loop() {
   lcd.clear();
   lcd.setCursor(0, 0);
-  temp_reading = analogRead(tempPin);
-  //  lcd.print(temp_reading);
-  // magic numbers are probably OK here. Linearize temperature to degrees C
-  // NB: this example is not based on reality. My magic numbers are probably
-  // way off.
-  temp_C = (float)temp_reading / 50.0 + 150;
-  lcd.print("Temp = ");
+  lcd.print("Temp ");
   lcd.print(temp_C);
+  lcd.setCursor(7,0);
   lcd.write(223); // degree symbol
   lcd.print("C");
   // we control the heater and the alarm based on the temperature
-  lcd.setCursor(0,1);
+  lcd.setCursor(0, 1);
   lcd.print("SetPt ");
   lcd.print((int)setPoint);
-  lcd.setCursor(10,1);
+  lcd.setCursor(10, 1);
   lcd.print("Hyst ");
-  lcd.print((int)hyst);
+  lcd.print(hyst);
+}
 
+void loop() {
+
+  vout = (float) analogRead(tempPin); //Reading the value from sensor
+  //vout = 10 mv * T
+  vout = (vout * 500) / 1023;
+  temp_C = (int)vout; // Storing value in Degree Celsius
+  //tempf = (vout * 1.8) + 32; // Converting to Fahrenheit
+  //Serial.println(vout, setPoint);
+
+
+  if (temp_C != lastTemp){
+    printTemps();
+  }
   
-  if (temp_C < setPoint - hyst) {
+  if (temp_C <= setPoint - hyst) {
     digitalWrite(heaterPin, HIGH); // too cold, so turn on the heater
+    digitalWrite(greenLedPin, HIGH);
   }
-
-  if (temp_C > setPoint + hyst) {
+  if (temp_C >= setPoint + hyst) {
     digitalWrite(heaterPin, LOW); // too warm, so turn off the heater
+    digitalWrite(greenLedPin,LOW);
+        Serial.println("off");
   }
-
   if (temp_C < setPoint - safeRange) {
-    myTone(buzzerPin, 500, 500); // way too cold, alarm
+    tone(redLedPin, 10000, 200); // way too cold, alarm
   }
-
   if (temp_C > setPoint + safeRange) {
-    myTone(buzzerPin, 700, 500); // way too warm, alarm
+    tone(redLedPin, 10000, 200);  // way too warm, alarm
   }
 
   uint8_t buttons = lcd.readButtons();
-
   if (buttons) {
-    lcd.clear();
-    lcd.setCursor(0, 1);
     if (buttons & BUTTON_UP) {
-      setPoint += 10;
+      setPoint += 1;
       if (setPoint > maxSetPoint) {
         setPoint = maxSetPoint;
-        myTone(2, 1500, 200);
+        tone(redLedPin, 10000, 200); 
       }
-      lcd.print("SetPt ");
-      lcd.print(setPoint);
+      printTemps();
     }
     if (buttons & BUTTON_DOWN) {
-      setPoint -= 10;
+      setPoint -= 1;
       if (setPoint < minSetPoint) {
         setPoint = minSetPoint;
-        myTone(2, 1500, 200);
+        tone(redLedPin, 10000, 200); 
       }
-      lcd.print("SetPt ");
-      lcd.print(setPoint);
+      printTemps();
     }
     if (buttons & BUTTON_RIGHT) {
-      hyst += 5;
+      hyst += 1;
       if (hyst > maxHyst) {
         hyst = maxHyst;
-        myTone(2, 1500, 200);
+        tone(redLedPin, 10000, 200); 
       }
-      lcd.print("Hyst ");
-      lcd.print(hyst);
     }
     if (buttons & BUTTON_LEFT) {
-      hyst -= 5;
+      hyst -= 1;
       if (hyst < minHyst) {
         hyst = minHyst;
-        myTone(2, 1500, 200);
+        tone(redLedPin, 10000, 200); 
       }
-      lcd.print("Hyst ");
-      lcd.print(hyst);
+      printTemps();
     }
     if (buttons & BUTTON_SELECT) {
-
+      // do nothing for now
     }
   }
+}
+
+void printTemps() {
+  lcd.setCursor(5,0);
+  lcd.print(temp_C);
+  lcd.setCursor(6, 1);
+  lcd.print(setPoint);
+  lcd.setCursor(15, 1);
+  lcd.print(hyst);
 }
 
 
